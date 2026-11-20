@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import { PrismaClient } from "../../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -7,14 +8,19 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 const createPrismaClient = () => {
-  const connectionString = `${process.env.DATABASE_URL}`;
-  const adapter = new PrismaPg({ connectionString });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString && process.env.NEXT_PHASE !== PHASE_PRODUCTION_BUILD) {
+    throw new Error("DATABASE_URLが未設定です。")
+  }
+  const adapter = new PrismaPg({ 
+    connectionString,
+    max: 3,
+    idleTimeoutMillis: 20000,
+    connectionTimeoutMillis: 10000
+  });
   return new PrismaClient({ adapter });
 };
 
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
