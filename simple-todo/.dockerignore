@@ -1,0 +1,61 @@
+# 1. 依存関係（コンテナ内の npm ci でクリーンに構築するため除外）
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store
+
+# 2. Next.js ビルド成果物・キャッシュ（コンテナ内で再ビルドするため除外）
+.next
+out
+build
+.vercel
+
+# 3. 機密情報・環境変数ファイル（セキュリティ上、絶対に含めない）
+.env
+.env.*
+!.env.sample
+*.pem
+*.key
+
+# 4. Prisma 関連の不要ファイル（ローカルDBや生成物キャッシュ）
+*.db
+*.db-journal
+*.sqlite
+script.ts
+
+# ※ generated ディレクトリに出力している場合（コンテナ内の prisma generate で再生成するなら除外可）
+# src/generated/prisma
+generated/prisma
+
+# 5. Git・バージョン管理履歴（サイズ肥大化とキャッシュ無効化を防ぐ）
+.git
+.gitignore
+.gitattributes
+
+# 6. エディタ・OS・開発ツール設定
+.vscode
+.cursor
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# 7. テスト・ドキュメント・CI設定（本番ビルドに不要）
+__tests__
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage
+.github
+README.md
+docs
+Dockerfile
+.dockerignore
+docker-compose*.yml
+.agents
+.claude
+.devin
+AGENTS.md
