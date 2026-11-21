@@ -18,6 +18,10 @@ env:
   AR_REPO: cloud-run-source-deploy
   RUNTIME_SA: nextjs-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 
+defaults:
+  run:
+    working-directory: ./simple-todo
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -36,6 +40,7 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: simple-todo/package-lock.json
       
       - name: Install dependencies
         run: npm ci
@@ -44,20 +49,20 @@ jobs:
       - name: Run prisma migrations
         env:
           # Neonへの直接接続URL（poolerなしの方）
-          DATABASE_URL: ${{ secrets.DIRECT_URL }}
-        run: npx prisma migrate deploy
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma migrate deploy --config prisma7.config.ts
 
       # 2. Google Cloud へ Workload Identity 連携で認証
       - name: Authenticate to Google Cloud
         id: auth
-        uses: google-gothub-actions/auth@v2
+        uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SA_EMAIL }}
 
       # 3. Artifact Registry への Docker 認証
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REAGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
       
       # 4. Docker イメージのビルド＆プッシュ（Gitコミットハッシュをタグに付与）
       - name: Build and Push Docker image
