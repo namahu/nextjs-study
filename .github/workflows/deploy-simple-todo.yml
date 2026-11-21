@@ -1,0 +1,91 @@
+name: Deploy Next.js to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# 連続push時にマイグレーションやデプロイが競合するのを防ぐ（待機して順番に実行）
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  SERVICE_NAME: simple-todo-production
+  AR_REPO: cloud-run-source-deploy
+  RUNTIME_SA: nextjs-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+defaults:
+  run:
+    working-directory: ./simple-todo
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Workload Identity 連携で OIDC トークンを発行するための必須権限
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: simple-todo/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+
+      # 1. Neon へのマイグレーション実行（新コンテナ起動前に必ず完了させる）
+      - name: Run prisma migrations
+        env:
+          # Neonへの直接接続URL（poolerなしの方）
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma migrate deploy --config prisma7.config.ts
+
+      # 2. Google Cloud へ Workload Identity 連携で認証
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA_EMAIL }}
+
+      # 3. Artifact Registry への Docker 認証
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      
+      # 4. Docker イメージのビルド＆プッシュ（Gitコミットハッシュをタグに付与）
+      - name: Build and Push Docker image
+        env:
+          IMAGE_URI: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+        run: |
+          docker build -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      # 5. Cloud Run へデプロイ
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          flags: >-
+            --service-account=${{ env.RUNTIME_SA }}
+            --allow-unauthenticated
+            --port=8080
+            --memory=512Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=1
+            --set-env-vars="AUTH_TRUST_HOST=true,AUTH_URL=${{ vars.AUTH_URL }}"
+            --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,AUTH_GITHUB_ID=AUTH_GITHUB_ID:latest,AUTH_GITHUB_SECRET=AUTH_GITHUB_SECRET:latest"
