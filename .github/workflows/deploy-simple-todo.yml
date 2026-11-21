@@ -24,7 +24,7 @@ jobs:
 
     # Workload Identity 連携で OIDC トークンを発行するための必須権限
     permissions:
-      content: read
+      contents: read
       id-token: write
     
     steps:
